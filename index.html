@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jeu de la Vie avec WebWorkers</title>
+    <style>
+      canvas {
+        border: 1px solid black;
+      }
+    </style>
+    <script>
+      let canvas, ctx;
+      let worker;
+      let grid,
+        rows = 100,
+        cols = 100,
+        cellSize = 5;
+      let running = false;
+      let generationSpeed = 500;
+      let intervalId = null;
+
+      function createEmptyGrid() {
+        let grid = new Array(rows)
+          .fill(null)
+          .map(() => new Array(cols).fill(0));
+
+        // Ajouter un Glider en haut à gauche de la grille
+        grid[1][2] = 1; // Partie supérieure du Glider
+        grid[2][3] = 1; // Partie centrale du Glider
+        grid[3][1] = 1; // Partie inférieure gauche du Glider
+        grid[3][2] = 1; // Partie inférieure centrale du Glider
+        grid[3][3] = 1; // Partie inférieure droite du Glider
+
+        return grid;
+      }
+
+      let previousGrid = createEmptyGrid();
+
+      function drawGrid(grid) {
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (grid[r][c] !== previousGrid[r][c]) {
+              ctx.fillStyle = grid[r][c] ? "black" : "white";
+              ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+              ctx.strokeRect(c * cellSize, r * cellSize, cellSize, cellSize);
+            }
+          }
+        }
+        previousGrid = grid.map((arr) => arr.slice()); // Cloner la grille pour l'état précédent
+      }
+
+      function toggleCell(e) {
+        let rect = canvas.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        let y = e.clientY - rect.top;
+        let row = Math.floor(y / cellSize);
+        let col = Math.floor(x / cellSize);
+        grid[row][col] = grid[row][col] ? 0 : 1;
+        drawGrid(grid);
+      }
+
+      function startGame() {
+        if (running) return;
+        running = true;
+        worker = new Worker("worker.js");
+        worker.postMessage({ grid, rows, cols });
+
+        function updateGame() {
+          worker.postMessage({ grid, rows, cols });
+          worker.onmessage = function (e) {
+            grid = e.data;
+            drawGrid(grid);
+          };
+        }
+
+        intervalId = setInterval(updateGame, generationSpeed); // Déclenche à intervalles réguliers
+      }
+
+      function stopGame() {
+        running = false;
+        clearInterval(intervalId); // Arrête la génération
+        if (worker) {
+          worker.terminate();
+          worker = null;
+        }
+      }
+
+      function speedUp() {
+        if (generationSpeed > 100) {
+          // Empêche la vitesse d'être trop rapide
+          generationSpeed -= 100;
+        }
+        document.getElementById("speedDisplay").textContent = generationSpeed;
+
+        if (running) {
+          // Réinitialiser l'intervalle avec la nouvelle vitesse
+          clearInterval(intervalId);
+          intervalId = setInterval(function () {
+            worker.postMessage({ grid, rows, cols });
+            worker.onmessage = function (e) {
+              grid = e.data;
+              drawGrid(grid);
+            };
+          }, generationSpeed);
+        }
+      }
+
+      window.onload = function () {
+        canvas = document.getElementById("gameCanvas");
+        ctx = canvas.getContext("2d");
+        canvas.width = cols * cellSize;
+        canvas.height = rows * cellSize;
+        grid = createEmptyGrid();
+        canvas.addEventListener("click", toggleCell);
+        drawGrid(grid);
+      };
+    </script>
+  </head>
+  <body>
+    <h1>Jeu de la Vie avec WebWorkers</h1>
+    <canvas id="gameCanvas"></canvas>
+    <br />
+    <button onclick="startGame()">Démarrer le Jeu</button>
+    <button onclick="stopGame()">Arrêter le Jeu</button>
+    <button onclick="speedUp()">Accélérer</button>
+    <div>Vitesse actuelle : <span id="speedDisplay">500</span> ms</div>
+  </body>
+</html>
